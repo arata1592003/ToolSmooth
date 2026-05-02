@@ -99,7 +99,7 @@ class GeminiKeyManager:
                 # 🔥 503: đổi key + nghỉ ngắn
                 if "503" in err or "ServiceUnavailable" in err:
                     self.log(f"⚠️ Key {current_key_num} bị 503 → đổi key, nghỉ 5s")
-                    time.sleep(5)
+                    time.sleep(30)
                     continue
 
                 # 🔥 429: nghỉ lâu hơn

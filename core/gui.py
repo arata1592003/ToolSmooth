@@ -395,10 +395,10 @@ class SmoothToolApp(ctk.CTk):
     # ================================
     # 🧩 Logic học toàn bộ truyện
     # ================================
-    def smooth_all(self, book_id, rules, num_workers=1, max_words_per_part=1000):
+    def smooth_all(self, book_id, rules, num_workers=1, max_words_per_part=2000):
         threading.Thread(target=self._smooth_all, args=(book_id, rules, num_workers, max_words_per_part), daemon=True).start()
 
-    def _smooth_all(self, book_id, rules, num_workers=1, max_words_per_part=1000):
+    def _smooth_all(self, book_id, rules, num_workers=1, max_words_per_part=2000):
         gemini = GeminiKeyManager(self.model_var.get(), self.log_gemini)
         smooth = Smooth(gemini=gemini, site=self.site_var.get(), book_id=book_id, rules=rules, logger=self.log)
 
@@ -453,7 +453,7 @@ class SmoothToolApp(ctk.CTk):
             font=ctk.CTkFont(size=14)
         ).pack(pady=(5, 0))
 
-        max_words_var = ctk.StringVar(value="1000")
+        max_words_var = ctk.StringVar(value="2000")
         max_words_entry = ctk.CTkEntry(popup, textvariable=max_words_var, width=100)
         max_words_entry.pack(pady=5)
 
@@ -501,7 +501,7 @@ class SmoothToolApp(ctk.CTk):
             max_words = int(max_words_per_part)
             if max_words < 500: max_words = 500
         except:
-            max_words = 1000
+            max_words = 2000
 
         selected_rule = rules.get(rule_name, "")
         site = self.site_var.get()

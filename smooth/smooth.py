@@ -149,10 +149,41 @@ class Smooth:
         {text}
         """
 
-    def smooth_chapter(self, chapter_number, text, max_words_per_part=1000, stop_event=None):
+    def get_title_from_original(self, chapter_number):
+        """Đọc dòng đầu tiên của file gốc và lọc bỏ phần 'Chương X: '"""
+        try:
+            files = sorted([f for f in os.listdir(self.input_folder) if extract_number(f) == chapter_number])
+            if not files: return ""
+            
+            path = os.path.join(self.input_folder, files[0])
+            first_line = ""
+            if path.endswith(".docx"):
+                import docx
+                doc = docx.Document(path)
+                for p in doc.paragraphs:
+                    if p.text.strip():
+                        first_line = p.text.strip()
+                        break
+            else:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip():
+                            first_line = line.strip()
+                            break
+            
+            if first_line:
+                # Regex để loại bỏ: Chương 10:, Chương 10., Chương 10 -, Chương 10...
+                clean_title = re.sub(r'^(?i)chuong\s*\d+\s*[:.\-\s]+', '', first_line).strip()
+                # Nếu sau khi lọc vẫn còn chữ thì đó là tiêu đề thực, nếu trống thì trả về ""
+                return clean_title if clean_title != first_line else first_line
+        except Exception as e:
+            self.log(f"⚠️ Không thể lấy tiêu đề gốc: {e}")
+        return ""
+
+    def smooth_chapter(self, chapter_number, text, max_words_per_part=2000, stop_event=None):
         text_parts = self.split_text(text, max_words_per_part)
         full_content = []
-        final_title = f"Chương {chapter_number}"
+        final_title = "" # Mặc định để trống để không bị lặp chữ "Chương"
         
         files = sorted([f for f in os.listdir(self.input_folder) if extract_number(f)], key=extract_number)
         prev_num = chapter_number - 1
@@ -170,10 +201,27 @@ class Smooth:
             
             prompt = self.build_prompt(chapter_number, part_text, prev_context if i==0 else f"=== PHẦN TRƯỚC ===\n{text_parts[i-1]}", label)
             
-            success, attempt = False, 0
-            while not success:
+            attempt = 0
+            while attempt < 5:
                 if stop_event and stop_event.is_set(): return {"error": "stop"}
                 attempt += 1
+                
+                # 🔥 RULE: Nếu thử quá 3 lần
+                if attempt > 3:
+                    words_count = len(part_text.split())
+                    if words_count >= 500:
+                        self.log(f"⚠️ Chương {chapter_number} {label}: Thất bại 3 lần (>= 500 chữ). Tiến hành tách đôi phần này...")
+                        sub_parts = self.split_text(part_text, max_words=words_count // 2 + 1)
+                        if len(sub_parts) > 1:
+                            text_parts[i:i+1] = sub_parts
+                            break 
+                    else:
+                        self.log(f"⚠️ Chương {chapter_number} {label}: Thất bại 3 lần (< 500 chữ). Thêm vào danh sách skip.")
+                        if chapter_number not in self.skip_data["skip"]:
+                            self.skip_data["skip"].append(chapter_number)
+                            self.save_skip()
+                        return {"error": "skip"}
+
                 self.log(f"🌀 Chương {chapter_number} {label}: Thử lần {attempt}...")
                 
                 try:
@@ -186,37 +234,44 @@ class Smooth:
                     res_json = None
                     try:
                         res_json = json.loads(cleaned_text)
-                    except json.JSONDecodeError as je:
-                        self.log(f"⚠️ JSON lỗi cú pháp. Đang tiến hành tự động vá lỗi (json5/json_repair)...")
-                        
+                    except json.JSONDecodeError:
                         try:
-                            # 2. Nếu lỗi, thử dùng json5 (bạn đã import sẵn)
                             res_json = json5.loads(cleaned_text)
                         except Exception:
-                            self.log("💡 Không thể phân tích, retry")
-                            raise je # Nếu không có thư viện thì đành chịu, throw lỗi để gen lại
+                            try:
+                                res_json = res_json
+                            except Exception:
+                                self.log("💡 Không thể phân tích JSON, retry...")
+                                continue
 
-                    
                     if isinstance(res_json, list): res_json = res_json[0]
                     
                     content = res_json.get("chapter_content", "")
-
                     content = self.fix_dot_and_quote(content)
                     
-                    # -----------------------------------
-
                     other = res_json.get("other_content", "")
-                    if i == 0: final_title = res_json.get("chapter_title", final_title)
+                    
+                    # 🔥 XỬ LÝ TIÊU ĐỀ: Nếu là phần đầu tiên, kiểm tra tiêu đề
+                    if i == 0:
+                        raw_title = res_json.get("chapter_title", "").strip()
+                        # Các từ khóa nhận diện AI đang "nhại lại" hướng dẫn thay vì trả về tiêu đề
+                        placeholders = ["nếu trong bản gốc", "giữ nguyên", "để trống", "không ghi kiểu", "tiêu đề chương"]
+                        is_placeholder = any(p in raw_title.lower() for p in placeholders)
+                        
+                        if is_placeholder or not raw_title:
+                            final_title = self.get_title_from_original(chapter_number)
+                        else:
+                            final_title = raw_title
 
                     orig_w = len(part_text.split())
                     smooth_w = len(content.split()) + len(other.split())
                     ratio = smooth_w / max(orig_w, 1)
                     
                     self.log(f"📏 Chương {chapter_number} {label}: Tỉ lệ {ratio:.2f} | Gốc: {orig_w} | Mượt: {smooth_w}")
-                    if (orig_w < 1200 and 0.8 <= ratio <= 1.30) or (orig_w >= 1200 and 0.85 <= ratio <= 1.25):
+                    if (orig_w < 500 and 0.9 <= ratio <= 1.40) or ( 500 <= orig_w < 1200 and 0.8 <= ratio <= 1.30) or (orig_w >= 1200 and 0.85 <= ratio <= 1.25):
                         full_content.append(content)
-                        success = True
                         i += 1
+                        break # Chuyển sang part tiếp theo
                     else:
                         time.sleep(2)
                 except Exception as e:
@@ -226,21 +281,17 @@ class Smooth:
                         words_count = len(part_text.split())
                         if words_count > 100:
                             self.log(f"⚠️ Chương {chapter_number} {label} bị chặn (Blocked). Tiến hành tách đôi phần này...")
-                            # Tách phần hiện tại làm đôi
                             sub_parts = self.split_text(part_text, max_words=words_count // 2 + 1)
                             if len(sub_parts) > 1:
-                                # Thay thế phần hiện tại bằng các phần nhỏ hơn
                                 text_parts[i:i+1] = sub_parts
-                                success = True # Thoát vòng lặp retry để quay lại xử lý text_parts mới
-                                continue
+                                break # Nạp lại part nhỏ hơn
                         else:
-                            self.log(f"⚠️ Chương {chapter_number} {label} bị chặn nhưng quá ngắn. Bỏ qua làm mượt đoạn này.")
-                            full_content.append(part_text) # Giữ nguyên gốc
-                            success, i = True, i + 1
-                            continue
+                            self.log(f"⚠️ Chương {chapter_number} {label} bị chặn nhưng quá ngắn. Giữ nguyên gốc.")
+                            full_content.append(part_text)
+                            i += 1
+                            break
 
                     self.log(f"❌ Lỗi chương {chapter_number} {label}: {e}")
-                    if attempt > 1000: return {"error": "fatal"}
                     time.sleep(2)
 
         out_path = os.path.join(self.smooth_output_folder, f"Chuong_{chapter_number:05d}.docx")
