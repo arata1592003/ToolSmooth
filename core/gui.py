@@ -16,9 +16,14 @@ class SmoothToolApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("📘 Làm mượt")
-        self.geometry("1100x750")
+        self.geometry("1150x800")
         self.stop_event = threading.Event()
         self.view_mode = "Đang làm" # Hoặc "Đã xong"
+        
+        # Quản lý hàng đợi
+        self.queue = []
+        self.is_processing = False
+        self.current_book_id = None
 
         # Layout chia 3 cột
         self.grid_columnconfigure(0, weight=1)
@@ -57,7 +62,14 @@ class SmoothToolApp(ctk.CTk):
             text="Làm mới",
             width=120,
             command=lambda: self.refresh_book_list()
-        ).pack(padx=5)
+        ).pack(padx=5, pady=(0, 10))
+
+        # --- Hàng đợi ---
+        ctk.CTkLabel(self.left, text="⏳ Hàng đợi", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=5)
+        self.queue_frame = ctk.CTkScrollableFrame(self.left, height=300)
+        self.queue_frame.pack(expand=True, fill="both", padx=10, pady=5)
+        
+        self.update_queue_ui()
 
     # ================================
     # 📚 Panel giữa — danh sách truyện
@@ -407,6 +419,31 @@ class SmoothToolApp(ctk.CTk):
             command=lambda: self.confirm_options(popup, book_id, rule_var.get(), rules, worker_var.get(), max_words_var.get())
         ).pack(pady=10)
 
+    def update_queue_ui(self):
+        for w in self.queue_frame.winfo_children():
+            w.destroy()
+        
+        if not self.queue:
+            ctk.CTkLabel(self.queue_frame, text="Trống", text_color="gray").pack(pady=10)
+            return
+
+        for i, item in enumerate(self.queue):
+            frame = ctk.CTkFrame(self.queue_frame)
+            frame.pack(fill="x", pady=2, padx=5)
+            
+            # Tên truyện trong hàng đợi
+            ctk.CTkLabel(frame, text=item['book_id'], anchor="w", font=ctk.CTkFont(size=12)).pack(side="left", padx=5, fill="x", expand=True)
+            
+            # Nút xóa khỏi hàng đợi
+            ctk.CTkButton(frame, text="✕", width=20, height=20, fg_color="red", hover_color="#8B0000",
+                          command=lambda idx=i: self.remove_from_queue(idx)).pack(side="right", padx=2)
+
+    def remove_from_queue(self, index):
+        if 0 <= index < len(self.queue):
+            item = self.queue.pop(index)
+            self.log(f"🗑 Đã xóa {item['book_id']} khỏi hàng đợi.")
+            self.update_queue_ui()
+
     def confirm_options(self, popup, book_id, rule_name, rules, num_workers, max_words_per_part):
         popup.destroy()
         
@@ -423,5 +460,58 @@ class SmoothToolApp(ctk.CTk):
             max_words = 1000
 
         selected_rule = rules.get(rule_name, "")
+        site = self.site_var.get()
 
-        self.smooth_all(book_id=book_id, rules=selected_rule, num_workers=workers, max_words_per_part=max_words)
+        # Thêm vào hàng đợi
+        self.queue.append({
+            'book_id': book_id,
+            'site': site,
+            'rules': selected_rule,
+            'num_workers': workers,
+            'max_words_per_part': max_words
+        })
+        
+        self.log(f"⏳ Đã thêm {book_id} vào hàng đợi.")
+        self.update_queue_ui()
+        
+        # Nếu đang không xử lý bộ nào thì bắt đầu ngay
+        if not self.is_processing:
+            self.process_next_in_queue()
+
+    def process_next_in_queue(self):
+        if not self.queue or self.is_processing:
+            return
+
+        next_item = self.queue.pop(0)
+        self.update_queue_ui()
+        
+        self.is_processing = True
+        self.current_book_id = next_item['book_id']
+        
+        # Chạy làm mượt
+        threading.Thread(target=self._smooth_all, args=(
+            next_item['book_id'], 
+            next_item['site'],
+            next_item['rules'], 
+            next_item['num_workers'], 
+            next_item['max_words_per_part']
+        ), daemon=True).start()
+
+    def _smooth_all(self, book_id, site, rules, num_workers, max_words_per_part):
+        try:
+            gemini = GeminiKeyManager(self.model_var.get(), self.log_gemini)
+            smooth = Smooth(gemini=gemini, site=site, book_id=book_id, rules=rules, logger=self.log)
+
+            self.log(f"📘 [QUEUE] Bắt đầu: {book_id} ({site})")
+            self.stop_event.clear()
+
+            smooth.smooth_range(start=None, end=None, stop_event=self.stop_event, num_workers=num_workers, max_words_per_part=max_words_per_part)
+            
+            self.log(f"🎯 [QUEUE] Hoàn tất: {book_id}")
+        except Exception as e:
+            self.log(f"❌ [QUEUE] Lỗi bộ {book_id}: {e}")
+        finally:
+            self.is_processing = False
+            self.current_book_id = None
+            # Sau khi xong bộ này, tự động lấy bộ tiếp theo
+            self.after(0, self.process_next_in_queue)
