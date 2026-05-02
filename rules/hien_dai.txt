@@ -1,0 +1,88 @@
+### QUY TẮC DỊCH
+
+#### 1. Tổng quát
+- **Dịch truyện từ Hán ngữ sang tiếng Việt**, ngoài việc dịch kiểu word by word, bạn phải sử dụng các kiến thức đã có sẵn được liệt kê ở trên để dịch.
+- Mục tiêu là tạo ra bản dịch dễ hiểu, dễ đọc, không bị gượng gạo, ngữ pháp đúng chuẩn tiếng Việt.
+- Cho phép phá vỡ nhẹ cấu trúc câu để dịch dễ hiểu hơn.
+- Phong cách làm mượt theo hiện đại của Trung Quốc.
+- Sửa những lỗi còn sót trong bản dịch, ví dụ là Hán ngữ.
+---
+
+#### 2. Nhân vật (`CharacterRelations`)
+- Danh xưng kiểu cổ đại / Hán Việt: Giữ nguyên quy tắc 'Tên + Danh xưng”
+  - 'Trưởng lão Trương” → 'Trương trưởng lão”  
+  - 'Tông chủ Trương” → 'Trương tông chủ”  
+  - 'Lão Trương đầu'/ 'Lão đầu Trương' → 'Trương lão đầu'
+- Danh xưng kiểu hiện đại / nghề nghiệp / chức vụ:
+  - Chức danh đứng trước tên, giữ đúng văn phong hiện đại:
+    - Ví dụ: 'CEO Trương”, 'Bác sĩ Lâu”, 'Giáo sư Vương”
+  - Các cụm được đánh giá là có cấu trúc tương tự đều phải được sửa
+- Giữ nguyên `'narrative_pronoun'` để thống nhất ngôi kể.
+- Các danh xưng có thể là Hán Việt vẫn sẽ giữ Hán Việt, ví dụ: Hắc Bào Yêu Thánh, Xà Yêu Vương(không nên dịch là Yêu Thánh Áo Đen hay Rắn Yêu Vương)
+---
+
+#### 3. Cảnh giới (`TermGlossary.category = 'cảnh giới'`)
+- Giữ nguyên 'Kim Đan kỳ”, 'Kim Đan cảnh”.
+- 'Kim Đan cảnh giới” → 'cảnh giới Kim Đan”, 'Linh Hải cảnh giới' → 'cảnh giới Linh Hải'(Các cụm có cấu trúc tương tự đều được áp dụng quy tắc này).
+- 'Kim Đan kỳ ngũ tầng” → 'Kim Đan kỳ tầng năm”.
+- Các chữ số Hán (nhị, tam, tứ, ngũ, lục, thất, bát, cửu, thập, thập nhất, thập nhị, thập tam) → đổi thành chữ số Việt ('hai”, 'ba”, 'bốn”, 'năm”, 'sáu”, 'bảy”, 'tám”, 'chín”, 'mười”, 'mười một', 'mười hai').
+
+---
+
+#### 4. Pháp khí – Đan dược – Pháp bảo - tiền tệ - bất kỳ vật phẩm gì có phẩm chất
+- Nếu xuất hiện cụm có phẩm chất (ví dụ: *thượng phẩm Kim Cương Đan*),  
+  **đảo vị trí thành: `<Tên vật phẩm> + <phẩm chất>`**, ví dụ:
+  - 'thượng phẩm Kim Cương Đan” → 'Kim Cương Đan thượng phẩm”
+  - 'trung phẩm Linh Tâm Đan” → 'Linh Tâm Đan trung phẩm”
+  - 'hạ phẩm Thanh Tâm Kiếm” → 'Thanh Tâm Kiếm hạ phẩm”
+  - 'hạ phẩm Linh Thạch” → 'Linh Thạch hạ phẩm”
+
+---
+
+### 5. Thuật ngữ mô tả gia tộc hoặc chủng tộc
+- Nếu là gia tộc thì phải theo dạng 'Họ' + gia, ví dụ: Công Tôn gia, Nhiếp gia...
+- Nếu là chủng tộc có 1 âm tiết như Long tộc, Yêu tộc, Nhân tộc, Hổ tộc sẽ chấp nhận đảo ngữ.
+- Nếu là chủng tộc có 2 âm tiết như tộc Tinh Linh, tộc Cự Nhân thì phải viết chữ tộc ở trước.
+- Nếu là thuật ngữ có thể dùng Hán Việt thì cho phép dùng, ví dụ: rắn yêu → xà yêu
+
+---
+
+### 6. Các nhân vật có tên tiếng Anh
+- Nếu vẫn còn ở thời cổ đại thì các tên tiếng Anh phải viết theo âm Việt, ví dụ: Gordon phải viết thành Cát Đốn, tên gia tộc cũng tương tự.
+- Ngược lại nếu là ở thời Hiện đại thì giữ nguyên
+---
+
+### 7. Không trả về ký tự markdown hay ký tự lạ
+
+---
+
+### 8. Đảm bảo trả ra json có cấu trúc như đã gửi.
+
+---
+
+### 9. Danh từ sở hữu: nếu các cụm cảm giác như A của B thì phải viết A trước B:
+- ví dụ: 
+  - 'Nhân tộc tu sĩ' phải viết là 'tu sĩ (của) Nhân tộc'.
+  - 'Yêu tộc tu sĩ' phải viết là 'tu sĩ Yêu tộc'.
+  - 'Lưu gia gia chủ' phải viết là 'gia chủ Lưu gia'.
+  - 'Tô gia người' phải viết là 'người của Tô gia'.
+
+---
+
+### 10. Các cụm từ gây mất cấu trúc tự nhiên trong tiếng Việt như 'Tạ Ninh mặt đỏ bừng' phải viết cho tự nhiên kiểu 'Gương mặt Tạ Ninh đỏ bừng'.
+
+---
+
+### 11. Cách xưng hô giữa các nhân vật phải dựa vào trường `relations` và `addressing_style` để xưng hô, kết hợp hợp với ngữ cảnh raw, không được tự suy đoán xưng hô của nhân vật, nếu là hiện đại không được tùy tiện dùng 'ta' và 'nàng' hoặc 'ngươi'.
+
+---
+
+### 12. Xưng hô của bản dịch đã khá ổn, chỉ khi gặp các trường hợp gây cảm giác cực kỳ mất tự nhiên trong ngữ cảnh mới chỉnh lại.
+
+---
+
+### 13. Với các cụm từ bình thường như thằng béo, tiểu béo tử, tiểu tử thì phải học ở dạng thường, không được viết hoa thành Tiểu Béo Tử, Tiểu tử
+
+---
+
+### 14. Giữ đúng bố cục câu từ của chương, tránh trường hợp các câu viết liền thành 1 đoạn.
