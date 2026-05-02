@@ -201,11 +201,7 @@ class Smooth:
                     
                     content = res_json.get("chapter_content", "")
 
-                    print(content)
-
                     content = self.fix_dot_and_quote(content)
-
-                    print(content)                    
                     
                     # -----------------------------------
 
