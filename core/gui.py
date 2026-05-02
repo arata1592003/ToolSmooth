@@ -172,7 +172,23 @@ class SmoothToolApp(ctk.CTk):
             ctk.CTkLabel(self.book_list, text=msg).pack(pady=20)
             return
 
+        path_trans_base = TRANSLATE_PATH if self.view_mode == "Đang làm" else DONE_TRANSLATE_PATH
+        path_smooth_base = SMOOTH_PATH if self.view_mode == "Đang làm" else DONE_SMOOTH_PATH
+        site = self.site_var.get()
+
         for folder in folders:
+            # Đếm số chương ở translate
+            trans_dir = os.path.join(path_trans_base, site, folder)
+            trans_count = 0
+            if os.path.exists(trans_dir):
+                trans_count = len([f for f in os.listdir(trans_dir) if f.endswith(('.docx', '.txt'))])
+            
+            # Đếm số chương ở smooth
+            smooth_dir = os.path.join(path_smooth_base, site, folder)
+            smooth_count = 0
+            if os.path.exists(smooth_dir):
+                smooth_count = len([f for f in os.listdir(smooth_dir) if f.endswith('.docx')])
+
             frame = ctk.CTkFrame(self.book_list)
             frame.pack(fill="x", pady=3, padx=5)
             
@@ -182,12 +198,17 @@ class SmoothToolApp(ctk.CTk):
             frame.grid_columnconfigure(2, weight=0)
             frame.grid_columnconfigure(3, weight=0)
 
+            # Hiển thị tên truyện kèm thống kê (Translate / Smooth)
+            display_text = f"{folder}  ({trans_count}/{smooth_count})"
+            label_color = "#28a745" if trans_count > 0 and trans_count == smooth_count else None
+
             label = ctk.CTkLabel(
                 frame, 
-                text=folder, 
+                text=display_text, 
                 anchor="w", 
                 justify="left",
                 font=ctk.CTkFont(size=14, weight="bold"),
+                text_color=label_color,
                 wraplength=350
             )
             label.grid(row=0, column=0, sticky="ew", padx=(10, 5), pady=8)
