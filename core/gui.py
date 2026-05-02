@@ -1,5 +1,5 @@
 import customtkinter as ctk
-import os, threading
+import os, threading, tkinter as tk
 from smooth.smooth import Smooth
 from gemini.gemini_key_manager import GeminiKeyManager
 from core.utils import load_sites, load_rules, move_book_folders, OUTPUT_PATH, DONE_PATH, merge_docx_to_txt
@@ -11,6 +11,33 @@ DONE_TRANSLATE_PATH = os.path.join(DONE_PATH, "translate")
 SMOOTH_PATH = os.path.join(OUTPUT_PATH, "smooth")
 DONE_SMOOTH_PATH = os.path.join(DONE_PATH, "smooth")
 MERGE_PATH = os.path.join(OUTPUT_PATH, "merge")
+
+class CTKTooltip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tooltip_window = None
+        self.widget.bind("<Enter>", self.show_tooltip)
+        self.widget.bind("<Leave>", self.hide_tooltip)
+
+    def show_tooltip(self, event=None):
+        if self.tooltip_window or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 10
+        self.tooltip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(tw, text=self.text, justify='left',
+                         background="#2b2b2b", foreground="#ffffff",
+                         relief='solid', borderwidth=1,
+                         font=("tahoma", "9", "normal"), padx=5, pady=2)
+        label.pack()
+
+    def hide_tooltip(self, event=None):
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+            self.tooltip_window = None
 
 class SmoothToolApp(ctk.CTk):
     def __init__(self):
@@ -103,12 +130,27 @@ class SmoothToolApp(ctk.CTk):
         )
         self.search_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
         
-        ctk.CTkButton(search_frame, text="X", width=30, command=lambda: self.search_var.set("")).pack(side="right")
+        ctk.CTkButton(search_frame, text="X", width=30, command=lambda: self.search_var.set("")).pack(side="right", padx=(5, 0))
+        
+        # Nút mở thư mục Merge độc lập
+        ctk.CTkButton(
+            search_frame, 
+            text="🔗 Thư mục Gộp", 
+            width=120, 
+            fg_color="#6c757d",
+            command=lambda: self.open_path(MERGE_PATH)
+        ).pack(side="right", padx=5)
 
         self.book_list = ctk.CTkScrollableFrame(self.middle)
         self.book_list.pack(expand=True, fill="both", padx=10, pady=10)
         
         self.all_folders = [] # Cache danh sách folder
+
+    def open_path(self, path):
+        if os.path.exists(path):
+            os.startfile(path)
+        else:
+            self.log(f"⚠️ Thư mục không tồn tại: {path}")
 
     def change_view_mode(self, mode):
         self.view_mode = mode
@@ -177,84 +219,65 @@ class SmoothToolApp(ctk.CTk):
         site = self.site_var.get()
 
         for folder in folders:
-            # Đếm số chương ở translate
+            # Thư mục cụ thể
             trans_dir = os.path.join(path_trans_base, site, folder)
-            trans_count = 0
-            if os.path.exists(trans_dir):
-                trans_count = len([f for f in os.listdir(trans_dir) if f.endswith(('.docx', '.txt'))])
-            
-            # Đếm số chương ở smooth
             smooth_dir = os.path.join(path_smooth_base, site, folder)
-            smooth_count = 0
-            if os.path.exists(smooth_dir):
-                smooth_count = len([f for f in os.listdir(smooth_dir) if f.endswith('.docx')])
+
+            # Đếm số chương
+            trans_count = len([f for f in os.listdir(trans_dir) if f.endswith(('.docx', '.txt'))]) if os.path.exists(trans_dir) else 0
+            smooth_count = len([f for f in os.listdir(smooth_dir) if f.endswith('.docx')]) if os.path.exists(smooth_dir) else 0
 
             frame = ctk.CTkFrame(self.book_list)
             frame.pack(fill="x", pady=3, padx=5)
             
-            # Layout Grid: Cột 0 co giãn, Cột 1-3 cố định cho nút
+            # Layout Grid
             frame.grid_columnconfigure(0, weight=1)
-            frame.grid_columnconfigure(1, weight=0)
-            frame.grid_columnconfigure(2, weight=0)
-            frame.grid_columnconfigure(3, weight=0)
+            for i in range(1, 7): frame.grid_columnconfigure(i, weight=0)
 
-            # Hiển thị tên truyện kèm thống kê (Translate / Smooth)
-            display_text = f"{folder}  ({trans_count}/{smooth_count})"
+            # Tên truyện + Thống kê
+            display_text = f"{folder} ({trans_count}/{smooth_count})"
             label_color = "#28a745" if trans_count > 0 and trans_count == smooth_count else None
 
-            label = ctk.CTkLabel(
-                frame, 
-                text=display_text, 
-                anchor="w", 
-                justify="left",
-                font=ctk.CTkFont(size=14, weight="bold"),
-                text_color=label_color,
-                wraplength=350
-            )
+            label = ctk.CTkLabel(frame, text=display_text, anchor="w", font=ctk.CTkFont(size=14, weight="bold"),
+                                text_color=label_color, wraplength=250)
             label.grid(row=0, column=0, sticky="ew", padx=(10, 5), pady=8)
 
+            # Nút 📁: Mở thư mục Dịch (Translate) - Màu vàng cam đặc trưng của folder
+            btn_trans = ctk.CTkButton(frame, text="📁", width=35, fg_color="#E6A23C", hover_color="#cf9236",
+                                     text_color="black", command=lambda p=trans_dir: self.open_path(p))
+            btn_trans.grid(row=0, column=1, padx=2)
+            CTKTooltip(btn_trans, "Mở thư mục Dịch thô")
+
+            # Nút 📂: Mở thư mục Làm mượt (Smooth) - Màu xanh dương
+            btn_smooth_f = ctk.CTkButton(frame, text="📂", width=35, fg_color="#409EFF", hover_color="#3a8ee6",
+                                        text_color="black", command=lambda p=smooth_dir: self.open_path(p))
+            btn_smooth_f.grid(row=0, column=2, padx=2)
+            CTKTooltip(btn_smooth_f, "Mở thư mục Đã làm mượt")
+
             if self.view_mode == "Đang làm":
-                # Nút Làm mượt
-                btn_smooth = ctk.CTkButton(
-                    frame, 
-                    text="Làm mượt", 
-                    width=90,
-                    command=lambda f=folder: self.choose_options_popup(f)
-                )
-                btn_smooth.grid(row=0, column=1, padx=5, pady=8, sticky="e")
+                # Nút ✨: Làm mượt
+                btn_smooth = ctk.CTkButton(frame, text="✨", width=35, fg_color="#3b8ed0", hover_color="#1f538d",
+                                          command=lambda f=folder: self.choose_options_popup(f))
+                btn_smooth.grid(row=0, column=3, padx=2)
+                CTKTooltip(btn_smooth, "Bắt đầu Làm mượt (AI)")
 
-                # Nút Gộp
-                btn_merge = ctk.CTkButton(
-                    frame, 
-                    text="Gộp", 
-                    width=60,
-                    fg_color="#6c757d",
-                    hover_color="#5a6268",
-                    command=lambda f=folder: self.choose_merge_options_popup(f)
-                )
-                btn_merge.grid(row=0, column=2, padx=5, pady=8, sticky="e")
+                # Nút 📑: Gộp
+                btn_merge = ctk.CTkButton(frame, text="📑", width=35, fg_color="#6c757d", hover_color="#5a6268",
+                                         command=lambda f=folder: self.choose_merge_options_popup(f))
+                btn_merge.grid(row=0, column=4, padx=2)
+                CTKTooltip(btn_merge, "Gộp file DOCX thành TXT")
 
-                # Nút Xong
-                btn_done = ctk.CTkButton(
-                    frame, 
-                    text="Xong", 
-                    width=60,
-                    fg_color="#28a745", 
-                    hover_color="#218838",
-                    command=lambda f=folder: self.toggle_book_status(f)
-                )
-                btn_done.grid(row=0, column=3, padx=(5, 10), pady=8, sticky="e")
+                # Nút ✅: Xong
+                btn_done = ctk.CTkButton(frame, text="✅", width=35, fg_color="#28a745", hover_color="#218838",
+                                        command=lambda f=folder: self.toggle_book_status(f))
+                btn_done.grid(row=0, column=5, padx=(2, 10))
+                CTKTooltip(btn_done, "Đánh dấu Hoàn thành (Chuyển sang Đã xong)")
             else:
-                # Chế độ "Đã xong" - Nút Khôi phục
-                btn_restore = ctk.CTkButton(
-                    frame, 
-                    text="Khôi phục", 
-                    width=120,
-                    fg_color="#17a2b8",
-                    hover_color="#138496",
-                    command=lambda f=folder: self.toggle_book_status(f)
-                )
-                btn_restore.grid(row=0, column=1, columnspan=3, padx=10, pady=8, sticky="e")
+                # Nút 🔄: Khôi phục
+                btn_restore = ctk.CTkButton(frame, text="🔄", width=35, fg_color="#17a2b8", hover_color="#138496",
+                                           command=lambda f=folder: self.toggle_book_status(f))
+                btn_restore.grid(row=0, column=3, padx=(2, 10))
+                CTKTooltip(btn_restore, "Khôi phục về danh sách Đang làm")
 
     def choose_merge_options_popup(self, book_id):
         popup = ctk.CTkToplevel(self)
