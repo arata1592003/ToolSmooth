@@ -3,7 +3,43 @@ import json
 import docx
 import re
 
+import shutil
+
 CRAWL_PATH = os.path.abspath("../output/crawl")
+OUTPUT_PATH = os.path.abspath("../output")
+DONE_PATH = os.path.abspath("../output_done")
+
+def move_book_folders(site, book_id, to_done=True):
+    """Di chuyển các folder liên quan đến truyện giữa output và output_done"""
+    src_base = OUTPUT_PATH if to_done else DONE_PATH
+    dst_base = DONE_PATH if to_done else OUTPUT_PATH
+    
+    # Các loại folder cần di chuyển
+    sub_dirs = [
+        os.path.join("translate", site, str(book_id)),
+        os.path.join("smooth", site, str(book_id)),
+        os.path.join("smooth", site, f"{book_id}_error"),
+        os.path.join("smooth", site, f"{book_id}_skip"),
+        os.path.join("crawl", site, str(book_id)),
+    ]
+    
+    moved_any = False
+    for sub in sub_dirs:
+        src = os.path.join(src_base, sub)
+        dst = os.path.join(dst_base, sub)
+        
+        if os.path.exists(src):
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            try:
+                # Nếu folder đích đã tồn tại, xóa nó trước khi di chuyển để tránh lỗi
+                if os.path.exists(dst):
+                    shutil.rmtree(dst)
+                shutil.move(src, dst)
+                moved_any = True
+            except Exception as e:
+                print(f"❌ Lỗi khi di chuyển {src}: {e}")
+                
+    return moved_any
 
 def read_docx(path):
     doc = docx.Document(path)

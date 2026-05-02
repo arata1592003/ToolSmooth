@@ -2,19 +2,20 @@ import customtkinter as ctk
 import os, threading
 from smooth.smooth import Smooth
 from gemini.gemini_key_manager import GeminiKeyManager
-from core.utils import load_sites, load_rules
+from core.utils import load_sites, load_rules, move_book_folders, OUTPUT_PATH, DONE_PATH
 from core.gemini_config import load_gemini_models, load_default_model
 
 
-TRANSLATE_PATH = os.path.abspath("../output/translate")
-CRAWL_PATH = os.path.abspath("../output/crawl")
+TRANSLATE_PATH = os.path.join(OUTPUT_PATH, "translate")
+DONE_TRANSLATE_PATH = os.path.join(DONE_PATH, "translate")
 
 class SmoothToolApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("📘 Làm mượt")
-        self.geometry("1000x700")
+        self.geometry("1100x750")
         self.stop_event = threading.Event()
+        self.view_mode = "Đang làm" # Hoặc "Đã xong"
 
         # Layout chia 3 cột
         self.grid_columnconfigure(0, weight=1)
@@ -64,6 +65,15 @@ class SmoothToolApp(ctk.CTk):
 
         ctk.CTkLabel(self.middle, text="📚 Danh sách truyện", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=10)
         
+        # Thanh chuyển đổi chế độ xem
+        self.mode_switch = ctk.CTkSegmentedButton(
+            self.middle, 
+            values=["Đang làm", "Đã xong"],
+            command=self.change_view_mode
+        )
+        self.mode_switch.set("Đang làm")
+        self.mode_switch.pack(pady=(0, 10))
+
         # Thanh tìm kiếm
         search_frame = ctk.CTkFrame(self.middle, fg_color="transparent")
         search_frame.pack(fill="x", padx=10, pady=(0, 10))
@@ -85,6 +95,9 @@ class SmoothToolApp(ctk.CTk):
         
         self.all_folders = [] # Cache danh sách folder
 
+    def change_view_mode(self, mode):
+        self.view_mode = mode
+        self.refresh_book_list()
 
     def on_search_change(self, *args):
         # Debounce: Chờ 300ms sau khi ngừng gõ mới thực hiện lọc để tránh lag
@@ -98,7 +111,9 @@ class SmoothToolApp(ctk.CTk):
         self.render_book_list(filtered)
 
     def refresh_book_list(self, *_):
-        BASE_PATH = os.path.join(TRANSLATE_PATH, self.site_var.get())
+        # Quyết định đường dẫn dựa trên chế độ xem
+        path_base = TRANSLATE_PATH if self.view_mode == "Đang làm" else DONE_TRANSLATE_PATH
+        BASE_PATH = os.path.join(path_base, self.site_var.get())
         
         # Reset tìm kiếm khi đổi site hoặc làm mới
         self.search_var.set("")
@@ -120,41 +135,78 @@ class SmoothToolApp(ctk.CTk):
 
         self.filter_books()
 
+    def toggle_book_status(self, book_id):
+        to_done = (self.view_mode == "Đang làm")
+        site = self.site_var.get()
+        
+        success = move_book_folders(site, book_id, to_done)
+        if success:
+            action = "hoàn thành" if to_done else "khôi phục"
+            self.log(f"✅ Đã {action} truyện: {book_id}")
+            self.refresh_book_list()
+        else:
+            self.log(f"❌ Không thể di chuyển folder cho truyện: {book_id}")
+
     def render_book_list(self, folders):
         # Xóa các widget cũ trong danh sách
         for w in self.book_list.winfo_children():
             w.destroy()
 
         if not folders:
-            ctk.CTkLabel(self.book_list, text="Không tìm thấy truyện nào").pack(pady=20)
+            msg = "Chưa có truyện nào đã xong" if self.view_mode == "Đã xong" else "Không tìm thấy truyện nào"
+            ctk.CTkLabel(self.book_list, text=msg).pack(pady=20)
             return
 
         for folder in folders:
             frame = ctk.CTkFrame(self.book_list)
             frame.pack(fill="x", pady=3, padx=5)
             
-            # Layout Grid: Cột 0 co giãn, Cột 1 cố định cho nút
+            # Layout Grid: Cột 0 co giãn, Cột 1-2 cố định cho nút
             frame.grid_columnconfigure(0, weight=1)
             frame.grid_columnconfigure(1, weight=0)
+            frame.grid_columnconfigure(2, weight=0)
 
-            # Label tên truyện: Có wraplength để tự xuống dòng nếu tên quá dài
             label = ctk.CTkLabel(
                 frame, 
                 text=folder, 
                 anchor="w", 
                 justify="left",
                 font=ctk.CTkFont(size=14, weight="bold"),
-                wraplength=450 # Giới hạn độ rộng text để không đẩy nút
+                wraplength=400
             )
             label.grid(row=0, column=0, sticky="ew", padx=(10, 5), pady=8)
 
-            btn = ctk.CTkButton(
-                frame, 
-                text="Làm mượt", 
-                width=110,
-                command=lambda f=folder: self.choose_options_popup(f)
-            )
-            btn.grid(row=0, column=1, padx=10, pady=8, sticky="e")
+            if self.view_mode == "Đang làm":
+                # Nút Làm mượt
+                btn_smooth = ctk.CTkButton(
+                    frame, 
+                    text="Làm mượt", 
+                    width=100,
+                    command=lambda f=folder: self.choose_options_popup(f)
+                )
+                btn_smooth.grid(row=0, column=1, padx=5, pady=8, sticky="e")
+
+                # Nút Xong
+                btn_done = ctk.CTkButton(
+                    frame, 
+                    text="Xong", 
+                    width=60,
+                    fg_color="#28a745", 
+                    hover_color="#218838",
+                    command=lambda f=folder: self.toggle_book_status(f)
+                )
+                btn_done.grid(row=0, column=2, padx=(5, 10), pady=8, sticky="e")
+            else:
+                # Chế độ "Đã xong" - Nút Khôi phục
+                btn_restore = ctk.CTkButton(
+                    frame, 
+                    text="Khôi phục", 
+                    width=120,
+                    fg_color="#17a2b8",
+                    hover_color="#138496",
+                    command=lambda f=folder: self.toggle_book_status(f)
+                )
+                btn_restore.grid(row=0, column=1, columnspan=2, padx=10, pady=8, sticky="e")
 
     # =================================
     # 🧠 Panel phải — log + dừng
