@@ -41,6 +41,49 @@ def move_book_folders(site, book_id, to_done=True):
                 
     return moved_any
 
+def normalize_text_for_merge(text: str) -> str:
+    # Chuẩn hóa newline về \n
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    # Mọi cụm xuống dòng -> đúng 2 newline
+    text = re.sub(r'\n+', '\n\n', text)
+    return text.strip()
+
+def extract_number_for_merge(filename):
+    name = filename.lower()
+    m = re.search(r'chuong[\s_-]*(\d+)', name)
+    if m:
+        return int(m.group(1))
+    nums = re.findall(r'\d+', name)
+    if nums:
+        return int(nums[-1])
+    return None
+
+def merge_docx_to_txt(input_folder, start, end, output_file):
+    all_text = ""
+    files = []
+    for f in os.listdir(input_folder):
+        num = extract_number_for_merge(f)
+        if num is not None and start <= num <= end:
+            files.append((num, f))
+
+    files.sort()
+    if not files:
+        return False, "Không tìm thấy file phù hợp trong khoảng đã chọn!"
+
+    for num, filename in files:
+        path = os.path.join(input_folder, filename)
+        try:
+            doc = docx.Document(path)
+            text = "\n".join([p.text for p in doc.paragraphs])
+            text = normalize_text_for_merge(text)
+            all_text += text + "\n\n"
+        except Exception as e:
+            print(f"Lỗi file {filename}: {e}")
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        f.write(all_text)
+    return True, output_file
+
 def read_docx(path):
     doc = docx.Document(path)
     return "\n".join(p.text for p in doc.paragraphs if p.text.strip())

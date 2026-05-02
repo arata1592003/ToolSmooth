@@ -2,12 +2,15 @@ import customtkinter as ctk
 import os, threading
 from smooth.smooth import Smooth
 from gemini.gemini_key_manager import GeminiKeyManager
-from core.utils import load_sites, load_rules, move_book_folders, OUTPUT_PATH, DONE_PATH
+from core.utils import load_sites, load_rules, move_book_folders, OUTPUT_PATH, DONE_PATH, merge_docx_to_txt
 from core.gemini_config import load_gemini_models, load_default_model
 
 
 TRANSLATE_PATH = os.path.join(OUTPUT_PATH, "translate")
 DONE_TRANSLATE_PATH = os.path.join(DONE_PATH, "translate")
+SMOOTH_PATH = os.path.join(OUTPUT_PATH, "smooth")
+DONE_SMOOTH_PATH = os.path.join(DONE_PATH, "smooth")
+MERGE_PATH = os.path.join(OUTPUT_PATH, "merge")
 
 class SmoothToolApp(ctk.CTk):
     def __init__(self):
@@ -161,10 +164,11 @@ class SmoothToolApp(ctk.CTk):
             frame = ctk.CTkFrame(self.book_list)
             frame.pack(fill="x", pady=3, padx=5)
             
-            # Layout Grid: Cột 0 co giãn, Cột 1-2 cố định cho nút
+            # Layout Grid: Cột 0 co giãn, Cột 1-3 cố định cho nút
             frame.grid_columnconfigure(0, weight=1)
             frame.grid_columnconfigure(1, weight=0)
             frame.grid_columnconfigure(2, weight=0)
+            frame.grid_columnconfigure(3, weight=0)
 
             label = ctk.CTkLabel(
                 frame, 
@@ -172,7 +176,7 @@ class SmoothToolApp(ctk.CTk):
                 anchor="w", 
                 justify="left",
                 font=ctk.CTkFont(size=14, weight="bold"),
-                wraplength=400
+                wraplength=350
             )
             label.grid(row=0, column=0, sticky="ew", padx=(10, 5), pady=8)
 
@@ -181,10 +185,21 @@ class SmoothToolApp(ctk.CTk):
                 btn_smooth = ctk.CTkButton(
                     frame, 
                     text="Làm mượt", 
-                    width=100,
+                    width=90,
                     command=lambda f=folder: self.choose_options_popup(f)
                 )
                 btn_smooth.grid(row=0, column=1, padx=5, pady=8, sticky="e")
+
+                # Nút Gộp
+                btn_merge = ctk.CTkButton(
+                    frame, 
+                    text="Gộp", 
+                    width=60,
+                    fg_color="#6c757d",
+                    hover_color="#5a6268",
+                    command=lambda f=folder: self.choose_merge_options_popup(f)
+                )
+                btn_merge.grid(row=0, column=2, padx=5, pady=8, sticky="e")
 
                 # Nút Xong
                 btn_done = ctk.CTkButton(
@@ -195,7 +210,7 @@ class SmoothToolApp(ctk.CTk):
                     hover_color="#218838",
                     command=lambda f=folder: self.toggle_book_status(f)
                 )
-                btn_done.grid(row=0, column=2, padx=(5, 10), pady=8, sticky="e")
+                btn_done.grid(row=0, column=3, padx=(5, 10), pady=8, sticky="e")
             else:
                 # Chế độ "Đã xong" - Nút Khôi phục
                 btn_restore = ctk.CTkButton(
@@ -206,7 +221,66 @@ class SmoothToolApp(ctk.CTk):
                     hover_color="#138496",
                     command=lambda f=folder: self.toggle_book_status(f)
                 )
-                btn_restore.grid(row=0, column=1, columnspan=2, padx=10, pady=8, sticky="e")
+                btn_restore.grid(row=0, column=1, columnspan=3, padx=10, pady=8, sticky="e")
+
+    def choose_merge_options_popup(self, book_id):
+        popup = ctk.CTkToplevel(self)
+        popup.title(f"Gộp file: {book_id}")
+        popup.geometry("300x200")
+        popup.grab_set()
+
+        ctk.CTkLabel(popup, text="Phạm vi chương cần gộp:", font=ctk.CTkFont(size=14, weight="bold")).pack(pady=10)
+
+        f_range = ctk.CTkFrame(popup, fg_color="transparent")
+        f_range.pack(pady=5)
+
+        ctk.CTkLabel(f_range, text="Từ:").grid(row=0, column=0, padx=5)
+        start_var = ctk.StringVar(value="1")
+        ctk.CTkEntry(f_range, textvariable=start_var, width=60).grid(row=0, column=1, padx=5)
+
+        ctk.CTkLabel(f_range, text="Đến:").grid(row=0, column=2, padx=5)
+        end_var = ctk.StringVar(value="100")
+        ctk.CTkEntry(f_range, textvariable=end_var, width=60).grid(row=0, column=3, padx=5)
+
+        ctk.CTkButton(
+            popup, 
+            text="Bắt đầu gộp", 
+            command=lambda: self.execute_merge(popup, book_id, start_var.get(), end_var.get())
+        ).pack(pady=20)
+
+    def execute_merge(self, popup, book_id, start_str, end_str):
+        try:
+            start = int(start_str)
+            end = int(end_str)
+        except:
+            self.log("❌ Lỗi: Start/End phải là số!")
+            return
+
+        popup.destroy()
+        
+        # Chạy gộp trong thread riêng để không treo GUI
+        threading.Thread(target=self._execute_merge_thread, args=(book_id, start, end), daemon=True).start()
+
+    def _execute_merge_thread(self, book_id, start, end):
+        # Quyết định đường dẫn nguồn dựa trên chế độ xem
+        path_base = SMOOTH_PATH if self.view_mode == "Đang làm" else DONE_SMOOTH_PATH
+        input_folder = os.path.join(path_base, self.site_var.get(), book_id)
+        
+        # Đường dẫn đích
+        os.makedirs(MERGE_PATH, exist_ok=True)
+        output_filename = f"{book_id} {start} - {end}.txt"
+        output_file = os.path.join(MERGE_PATH, output_filename)
+
+        self.log(f"⏳ Đang gộp {book_id} (Chương {start} - {end})...")
+        
+        try:
+            success, result = merge_docx_to_txt(input_folder, start, end, output_file)
+            if success:
+                self.log(f"✅ Gộp thành công! File lưu tại: {result}")
+            else:
+                self.log(f"❌ Gộp thất bại: {result}")
+        except Exception as e:
+            self.log(f"❌ Lỗi hệ thống khi gộp: {e}")
 
     # =================================
     # 🧠 Panel phải — log + dừng
