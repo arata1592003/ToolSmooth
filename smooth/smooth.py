@@ -56,7 +56,7 @@ class Smooth:
     
     def fix_dot_and_quote(self, content: str) -> str:
         # Chỉ xử lý khi không có xuống dòng
-        if content.count("\n") >= 20:
+        if content.count("\n") >= 30:
             print("deo co loz oi")
             return content
 

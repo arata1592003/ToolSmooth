@@ -410,7 +410,6 @@ class SmoothToolApp(ctk.CTk):
         self.log(f"🎯 Hoàn tất toàn bộ truyện: {book_id}")
 
     def choose_options_popup(self, book_id):
-        
         rules = load_rules()
 
         if not rules:
@@ -418,50 +417,55 @@ class SmoothToolApp(ctk.CTk):
             return
 
         popup = ctk.CTkToplevel(self)
-        popup.title("Chọn quy tắc dịch")
-        popup.geometry("350x280")
+        popup.title(f"Cấu hình: {book_id}")
+        popup.geometry("450x480")
         popup.grab_set() 
 
         ctk.CTkLabel(
             popup,
-            text="Chọn quy tắc dịch:",
-            font=ctk.CTkFont(size=16, weight="bold")
-        ).pack(pady=10)
+            text="⚙️ Cấu hình Làm mượt",
+            font=ctk.CTkFont(size=18, weight="bold")
+        ).pack(pady=20)
 
+        # Container cho các trường nhập liệu
+        form_frame = ctk.CTkFrame(popup, fg_color="transparent")
+        form_frame.pack(padx=30, fill="x")
+        
+        form_frame.grid_columnconfigure(0, weight=1)
+        form_frame.grid_columnconfigure(1, weight=1)
+
+        # 1. Chọn quy tắc dịch
+        ctk.CTkLabel(form_frame, text="Quy tắc dịch:", font=ctk.CTkFont(size=14)).grid(row=0, column=0, sticky="w", pady=10)
         rule_var = ctk.StringVar(value=list(rules.keys())[0])
+        style_menu = ctk.CTkOptionMenu(form_frame, values=list(rules.keys()), variable=rule_var, width=180)
+        style_menu.grid(row=0, column=1, sticky="e", pady=10)
 
-        style_menu = ctk.CTkOptionMenu(
-            popup,
-            values=list(rules.keys()),
-            variable=rule_var
-        )
-        style_menu.pack(pady=5)
-
-        ctk.CTkLabel(
-            popup,
-            text="Số lượng worker:",
-            font=ctk.CTkFont(size=14)
-        ).pack(pady=(10, 0))
-
+        # 2. Số lượng worker
+        ctk.CTkLabel(form_frame, text="Số lượng Worker:", font=ctk.CTkFont(size=14)).grid(row=1, column=0, sticky="w", pady=10)
         worker_var = ctk.StringVar(value="1")
-        worker_entry = ctk.CTkEntry(popup, textvariable=worker_var, width=100)
-        worker_entry.pack(pady=5)
+        worker_entry = ctk.CTkEntry(form_frame, textvariable=worker_var, width=180)
+        worker_entry.grid(row=1, column=1, sticky="e", pady=10)
 
-        ctk.CTkLabel(
-            popup,
-            text="Số chữ tối đa/phần:",
-            font=ctk.CTkFont(size=14)
-        ).pack(pady=(5, 0))
-
+        # 3. Số chữ tối đa/phần
+        ctk.CTkLabel(form_frame, text="Số chữ tối đa/phần:", font=ctk.CTkFont(size=14)).grid(row=2, column=0, sticky="w", pady=10)
         max_words_var = ctk.StringVar(value="2000")
-        max_words_entry = ctk.CTkEntry(popup, textvariable=max_words_var, width=100)
-        max_words_entry.pack(pady=5)
+        max_words_entry = ctk.CTkEntry(form_frame, textvariable=max_words_var, width=180)
+        max_words_entry.grid(row=2, column=1, sticky="e", pady=10)
 
+        # 4. Giới hạn RPM
+        ctk.CTkLabel(form_frame, text="Giới hạn RPM (Req/Min):", font=ctk.CTkFont(size=14)).grid(row=3, column=0, sticky="w", pady=10)
+        rpm_var = ctk.StringVar(value="8")
+        rpm_entry = ctk.CTkEntry(form_frame, textvariable=rpm_var, width=180)
+        rpm_entry.grid(row=3, column=1, sticky="e", pady=10)
+
+        # Nút bắt đầu
         ctk.CTkButton(
             popup,
-            text="Bắt đầu",
-            command=lambda: self.confirm_options(popup, book_id, rule_var.get(), rules, worker_var.get(), max_words_var.get())
-        ).pack(pady=10)
+            text="🚀 Bắt đầu",
+            height=40,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            command=lambda: self.confirm_options(popup, book_id, rule_var.get(), rules, worker_var.get(), max_words_var.get(), rpm_var.get())
+        ).pack(pady=30)
 
     def update_queue_ui(self):
         for w in self.queue_frame.winfo_children():
@@ -488,7 +492,7 @@ class SmoothToolApp(ctk.CTk):
             self.log(f"🗑 Đã xóa {item['book_id']} khỏi hàng đợi.")
             self.update_queue_ui()
 
-    def confirm_options(self, popup, book_id, rule_name, rules, num_workers, max_words_per_part):
+    def confirm_options(self, popup, book_id, rule_name, rules, num_workers, max_words_per_part, rpm_limit):
         popup.destroy()
         
         try:
@@ -503,6 +507,12 @@ class SmoothToolApp(ctk.CTk):
         except:
             max_words = 2000
 
+        try:
+            rpm = int(rpm_limit)
+            if rpm < 1: rpm = 1
+        except:
+            rpm = 8
+
         selected_rule = rules.get(rule_name, "")
         site = self.site_var.get()
 
@@ -512,10 +522,11 @@ class SmoothToolApp(ctk.CTk):
             'site': site,
             'rules': selected_rule,
             'num_workers': workers,
-            'max_words_per_part': max_words
+            'max_words_per_part': max_words,
+            'rpm_limit': rpm
         })
         
-        self.log(f"⏳ Đã thêm {book_id} vào hàng đợi.")
+        self.log(f"⏳ Đã thêm {book_id} vào hàng đợi. (RPM Limit: {rpm})")
         self.update_queue_ui()
         
         # Nếu đang không xử lý bộ nào thì bắt đầu ngay
@@ -538,15 +549,16 @@ class SmoothToolApp(ctk.CTk):
             next_item['site'],
             next_item['rules'], 
             next_item['num_workers'], 
-            next_item['max_words_per_part']
+            next_item['max_words_per_part'],
+            next_item['rpm_limit']
         ), daemon=True).start()
 
-    def _smooth_all(self, book_id, site, rules, num_workers, max_words_per_part):
+    def _smooth_all(self, book_id, site, rules, num_workers, max_words_per_part, rpm_limit):
         try:
-            gemini = GeminiKeyManager(self.model_var.get(), self.log_gemini)
+            gemini = GeminiKeyManager(self.model_var.get(), self.log_gemini, rpm_limit=rpm_limit)
             smooth = Smooth(gemini=gemini, site=site, book_id=book_id, rules=rules, logger=self.log)
 
-            self.log(f"📘 [QUEUE] Bắt đầu: {book_id} ({site})")
+            self.log(f"📘 [QUEUE] Bắt đầu: {book_id} ({site}) | RPM: {rpm_limit}")
             self.stop_event.clear()
 
             smooth.smooth_range(start=None, end=None, stop_event=self.stop_event, num_workers=num_workers, max_words_per_part=max_words_per_part)

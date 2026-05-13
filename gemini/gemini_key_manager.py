@@ -21,12 +21,19 @@ def load_api_keys():
     return api_keys
 
 class GeminiKeyManager:
-    def __init__(self, model_name = None, logger=print):
+    def __init__(self, model_name = None, logger=print, rpm_limit=8):
         self.api_keys = load_api_keys()
         self.current_index = 0
-        self.model_name = model_name or "gemini-2.5-flash"
+        self.model_name = model_name or "gemini-2.0-flash-lite-preview-02-05"
         self.logger = logger
         self.lock = threading.Lock()
+        
+        # --- Cấu hình Rate Limiting ---
+        self.rpm_limit = rpm_limit
+        self.request_timestamps = [] # Lưu vết thời gian các request trong 60s
+        self.last_request_start = 0  # Thời điểm bắt đầu request gần nhất
+        self.request_spacing = 3     # Giãn cách 3 giây giữa các lần gọi (start)
+        
         self.set_api_key(0)
 
     def log(self, msg):
@@ -37,27 +44,47 @@ class GeminiKeyManager:
         with self.lock:
             self.current_index = index % len(self.api_keys)
             genai.configure(api_key=self.api_keys[self.current_index])
-            self.log(f"🔑 Đang dùng key {self.current_index + 1}/{len(self.api_keys)}")
+            # self.log(f"🔑 Đang dùng key {self.current_index + 1}/{len(self.api_keys)}")
 
-    def _extract_text_from_gemini_response(self, response):
-        """Chuẩn hoá response từ Gemini về str."""
-        if response is None: return ""
-        if isinstance(response, str): return response
-        if hasattr(response, "text"): return response.text
-        if isinstance(response, dict) and "text" in response: return response["text"]
-        if isinstance(response, list) and len(response) > 0:
-            return self._extract_text_from_gemini_response(response[0])
-        return str(response)
+    def _wait_for_rate_limit(self):
+        """Hàm điều phối luồng: Chờ nếu vi phạm RPM hoặc giãn cách giây"""
+        while True:
+            with self.lock:
+                now = time.time()
+                
+                # 1. Dọn dẹp các timestamp cũ hơn 60 giây
+                self.request_timestamps = [t for t in self.request_timestamps if now - t < 60]
+                
+                # 2. Kiểm tra giới hạn RPM
+                if len(self.request_timestamps) >= self.rpm_limit:
+                    wait_time = 60 - (now - self.request_timestamps[0])
+                    if wait_time > 0:
+                        self.log(f"⏳ Đạt ngưỡng {self.rpm_limit} RPM. Nghỉ {wait_time:.1f}s...")
+                        time.sleep(wait_time)
+                        continue # Kiểm tra lại sau khi nghỉ
+                
+                # 3. Kiểm tra giãn cách giữa các lần khởi chạy (2-3 giây)
+                time_since_last = now - self.last_request_start
+                if time_since_last < self.request_spacing:
+                    wait_gap = self.request_spacing - time_since_last
+                    time.sleep(wait_gap)
+                    continue
+                
+                # Nếu thỏa mãn mọi điều kiện: Chốt thời gian và cho phép chạy
+                self.last_request_start = time.time()
+                self.request_timestamps.append(self.last_request_start)
+                break
 
     def generate(self, prompt, retries=10):
         attempt = 0
 
         while attempt < retries:
+            # Điều phối lưu lượng trước khi gọi API
+            self._wait_for_rate_limit()
+
             with self.lock:
                 api_key = self.api_keys[self.current_index]
                 current_key_num = self.current_index + 1
-
-                # rotate key ngay từ đầu
                 self.current_index = (self.current_index + 1) % len(self.api_keys)
 
             try:
@@ -105,7 +132,7 @@ class GeminiKeyManager:
                 # 🔥 429: nghỉ lâu hơn
                 elif "429" in err or "limit" in err.lower():
                     self.log(f"⚠️ Key {current_key_num} rate limit → nghỉ 10s")
-                    time.sleep(10)
+                    time.sleep(45)
                     continue
 
                 # 🔥 lỗi khác
