@@ -1,9 +1,9 @@
 import customtkinter as ctk
 import os, threading, tkinter as tk
 from smooth.smooth import Smooth
-from gemini.gemini_key_manager import GeminiKeyManager
+from gemini.gemini_key_manager import GeminiKeyManager, load_api_keys, save_api_keys
 from core.utils import load_sites, load_rules, move_book_folders, OUTPUT_PATH, DONE_PATH, merge_docx_to_txt
-from core.gemini_config import load_gemini_models, load_default_model
+from core.gemini_config import load_gemini_models, load_default_model, save_gemini_models
 
 
 TRANSLATE_PATH = os.path.join(OUTPUT_PATH, "translate")
@@ -338,6 +338,187 @@ class SmoothToolApp(ctk.CTk):
         except Exception as e:
             self.log(f"❌ Lỗi hệ thống khi gộp: {e}")
 
+    def open_key_manager(self):
+        popup = ctk.CTkToplevel(self)
+        popup.title("Trình quản lý API Keys theo Gmail")
+        popup.geometry("600x650")
+        popup.grab_set()
+
+        ctk.CTkLabel(popup, text="🔑 Quản lý API Keys theo Gmail", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=15)
+
+        # --- 1. Thêm Gmail mới ---
+        gmail_frame = ctk.CTkFrame(popup, fg_color="transparent")
+        gmail_frame.pack(fill="x", padx=20, pady=5)
+        
+        new_gmail_var = ctk.StringVar()
+        ctk.CTkEntry(gmail_frame, placeholder_text="Nhập Gmail mới (vd: user1@gmail.com)", 
+                     textvariable=new_gmail_var).pack(side="left", fill="x", expand=True, padx=(0, 10))
+
+        def add_account():
+            gmail = new_gmail_var.get().strip()
+            all_data = load_api_keys()
+            if gmail and not any(acc['gmail'] == gmail for acc in all_data):
+                all_data.append({"gmail": gmail, "keys": []})
+                save_api_keys(all_data)
+                new_gmail_var.set("")
+                render_list()
+                self.log(f"✅ Đã thêm tài khoản Gmail: {gmail}")
+            else:
+                self.log("⚠️ Gmail không hợp lệ hoặc đã tồn tại")
+
+        ctk.CTkButton(gmail_frame, text="Thêm Gmail", width=100, command=add_account).pack(side="right")
+
+        # --- 2. Thêm Key vào Gmail ---
+        key_frame = ctk.CTkFrame(popup, fg_color="transparent")
+        key_frame.pack(fill="x", padx=20, pady=10)
+        
+        all_data = load_api_keys()
+        gmail_list = [acc['gmail'] for acc in all_data] or ["Chưa có Gmail"]
+        selected_gmail = ctk.StringVar(value=gmail_list[0])
+        
+        gmail_menu = ctk.CTkOptionMenu(key_frame, values=gmail_list, variable=selected_gmail, width=150)
+        gmail_menu.pack(side="left", padx=(0, 10))
+        
+        new_key_var = ctk.StringVar()
+        ctk.CTkEntry(key_frame, placeholder_text="Nhập API Key mới", 
+                     textvariable=new_key_var).pack(side="left", fill="x", expand=True, padx=(0, 10))
+
+        def add_key():
+            k = new_key_var.get().strip()
+            g = selected_gmail.get()
+            data = load_api_keys()
+            found = False
+            for acc in data:
+                if acc['gmail'] == g:
+                    if k and k not in acc['keys']:
+                        acc['keys'].append(k)
+                        found = True
+                    break
+            if found:
+                save_api_keys(data)
+                new_key_var.set("")
+                render_list()
+                self.log(f"✅ Đã thêm Key vào Gmail: {g}")
+            else:
+                self.log("⚠️ Key lỗi hoặc không tìm thấy Gmail")
+
+        ctk.CTkButton(key_frame, text="Thêm Key", width=100, command=add_key).pack(side="right")
+
+        # --- 3. Danh sách hiển thị ---
+        list_frame = ctk.CTkScrollableFrame(popup)
+        list_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        def delete_account(gmail):
+            data = load_api_keys()
+            data = [acc for acc in data if acc['gmail'] != gmail]
+            save_api_keys(data)
+            render_list()
+            update_menus()
+
+        def delete_key(gmail, key_val):
+            data = load_api_keys()
+            for acc in data:
+                if acc['gmail'] == gmail:
+                    if key_val in acc['keys']:
+                        acc['keys'].remove(key_val)
+                    break
+            save_api_keys(data)
+            render_list()
+
+        def update_menus():
+            data = load_api_keys()
+            g_list = [acc['gmail'] for acc in data] or ["Chưa có Gmail"]
+            gmail_menu.configure(values=g_list)
+            if selected_gmail.get() not in g_list:
+                selected_gmail.set(g_list[0])
+
+        def render_list():
+            for w in list_frame.winfo_children():
+                w.destroy()
+            data = load_api_keys()
+            for acc in data:
+                g_name = acc['gmail']
+                # Header Gmail
+                h_frame = ctk.CTkFrame(list_frame, fg_color="#333333")
+                h_frame.pack(fill="x", pady=(10, 2))
+                ctk.CTkLabel(h_frame, text=f"📧 {g_name}", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
+                ctk.CTkButton(h_frame, text="Xóa Gmail", width=80, height=20, fg_color="#c0392b", 
+                              command=lambda g=g_name: delete_account(g)).pack(side="right", padx=5)
+                
+                # Danh sách keys của gmail đó
+                for k in acc.get("keys", []):
+                    k_frame = ctk.CTkFrame(list_frame, fg_color="transparent")
+                    k_frame.pack(fill="x", padx=15)
+                    short_k = k[:10] + "..." + k[-10:] if len(k) > 25 else k
+                    ctk.CTkLabel(k_frame, text=f"  🔑 {short_k}", font=ctk.CTkFont(size=12)).pack(side="left")
+                    ctk.CTkButton(k_frame, text="✕", width=20, height=20, fg_color="transparent", text_color="red",
+                                  command=lambda g=g_name, val=k: delete_key(g, val)).pack(side="right")
+            update_menus()
+
+        render_list()
+
+    def open_model_manager(self):
+        popup = ctk.CTkToplevel(self)
+        popup.title("Trình quản lý Model Gemini")
+        popup.geometry("400x500")
+        popup.grab_set()
+
+        ctk.CTkLabel(popup, text="🤖 Quản lý Models", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=15)
+
+        # Khu vực thêm model mới
+        add_frame = ctk.CTkFrame(popup, fg_color="transparent")
+        add_frame.pack(fill="x", padx=20, pady=10)
+        
+        new_model_var = ctk.StringVar()
+        entry = ctk.CTkEntry(add_frame, placeholder_text="Nhập Model ID (vd: gemini-2.0-flash)", textvariable=new_model_var)
+        entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+
+        def add_model():
+            m = new_model_var.get().strip()
+            if m and m not in self.models:
+                self.models.append(m)
+                save_gemini_models(self.models)
+                new_model_var.set("")
+                render_list()
+                self.refresh_model_menu()
+            else:
+                self.log("⚠️ Model ID không hợp lệ hoặc đã tồn tại")
+
+        ctk.CTkButton(add_frame, text="Thêm", width=70, command=add_model).pack(side="right")
+
+        # Danh sách model hiện tại
+        list_frame = ctk.CTkScrollableFrame(popup)
+        list_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        def delete_model(m_id):
+            if len(self.models) <= 1:
+                self.log("⚠️ Phải giữ lại ít nhất 1 model")
+                return
+            if m_id in self.models:
+                self.models.remove(m_id)
+                save_gemini_models(self.models)
+                render_list()
+                self.refresh_model_menu()
+
+        def render_list():
+            for w in list_frame.winfo_children():
+                w.destroy()
+            for m in self.models:
+                f = ctk.CTkFrame(list_frame, fg_color="transparent")
+                f.pack(fill="x", pady=2)
+                ctk.CTkLabel(f, text=m, anchor="w").pack(side="left", padx=5, fill="x", expand=True)
+                ctk.CTkButton(f, text="✕", width=25, height=25, fg_color="#c0392b", hover_color="#a93226",
+                              command=lambda val=m: delete_model(m_id=val)).pack(side="right", padx=5)
+
+        render_list()
+
+    def refresh_model_menu(self):
+        """Cập nhật lại OptionMenu chọn model ở màn hình chính"""
+        self.models = load_gemini_models()
+        self.model_menu.configure(values=self.models)
+        if self.model_var.get() not in self.models:
+            self.model_var.set(self.models[0])
+
     # =================================
     # 🧠 Panel phải — log + dừng
     # =================================
@@ -345,17 +526,30 @@ class SmoothToolApp(ctk.CTk):
         self.right = ctk.CTkFrame(self)
         self.right.grid(row=0, column=2, sticky="nsew", padx=10, pady=10)
 
-        ctk.CTkLabel(self.right, text="🤖 Gemini Model", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=5)
+        # Header cho Model với nút Quản lý
+        model_header = ctk.CTkFrame(self.right, fg_color="transparent")
+        model_header.pack(fill="x", pady=5)
+        
+        ctk.CTkLabel(model_header, text="🤖 Gemini Model", font=ctk.CTkFont(size=16, weight="bold")).pack(side="left", padx=10)
+        
+        btn_manage_model = ctk.CTkButton(model_header, text="⚙️", width=30, command=self.open_model_manager)
+        btn_manage_model.pack(side="right", padx=5)
+        CTKTooltip(btn_manage_model, "Quản lý danh sách Model")
 
-        models = load_gemini_models()
-        default = load_default_model() or models[0]
+        btn_manage_key = ctk.CTkButton(model_header, text="🔑", width=30, command=self.open_key_manager)
+        btn_manage_key.pack(side="right", padx=5)
+        CTKTooltip(btn_manage_key, "Quản lý danh sách API Key")
+
+        self.models = load_gemini_models()
+        default = load_default_model()
         self.model_var = ctk.StringVar(value=default)
 
-        ctk.CTkOptionMenu(
+        self.model_menu = ctk.CTkOptionMenu(
             self.right,
-            values=models,
+            values=self.models,
             variable=self.model_var
-        ).pack(pady=5)
+        )
+        self.model_menu.pack(pady=5, fill="x", padx=10)
 
         # --- Log Gemini ---
         ctk.CTkLabel(self.right, text="🧠 Log key", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=10)

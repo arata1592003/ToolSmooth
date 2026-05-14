@@ -150,3 +150,4 @@ cython_debug/
 skip_chapters.json
 keys.txt
 error/
+configs/
